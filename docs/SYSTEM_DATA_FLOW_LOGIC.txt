@@ -1,0 +1,796 @@
+PMS SYSTEM DATA FLOW & LOGIC ARCHITECTURE - TEXT VERSION
+
+========================================================================
+OVERVIEW
+========================================================================
+
+This document explains how data flows through the entire PMS system 
+from Frontend → Backend → Database, with real-world scenarios.
+
+The system uses a 3-tier architecture:
+  Layer 1: Frontend (HTML, CSS, JavaScript)
+  Layer 2: Backend (PHP, REST API)
+  Layer 3: Database (MySQL)
+
+========================================================================
+COMPLETE DATA FLOW DIAGRAM (TEXT)
+========================================================================
+
+CLIENT LAYER (Frontend)
+├── Admin Dashboard
+│   ├── Appointment CRUD operations
+│   ├── Patient Management
+│   ├── Billing & Inventory
+│   └── Real-time Updates
+├── Patient Dashboard
+│   ├── View Appointments
+│   ├── Health Reminders
+│   ├── Notifications
+│   └── Activity Log
+└── app.js (JavaScript Controller)
+    ├── Event listeners & DOM manipulation
+    ├── AJAX fetch() calls to api.php
+    ├── Real-time refresh loops (10-second intervals)
+    ├── Form validation & submission
+    ├── Dark mode toggle & localStorage
+    └── Client-side search & filtering
+
+        ↓ HTTP/AJAX (POST/GET to api.php)
+
+SERVER LAYER (Backend)
+├── api.php (Route Handler & Business Logic)
+│   ├── 1. Request Routing
+│   │   └── Parse action parameter
+│   ├── 2. Authentication Check
+│   │   ├── Verify session exists
+│   │   ├── Check user role
+│   │   └── Return 401 if unauthorized
+│   ├── 3. Input Validation & Sanitization
+│   │   ├── Trim whitespace
+│   │   ├── Validate data types
+│   │   ├── Check required fields
+│   │   └── SQL injection prevention (PDO)
+│   ├── 4. Business Logic Processing
+│   │   ├── Execute database queries
+│   │   ├── Transform data if needed
+│   │   └── Handle error cases
+│   └── 5. Response Formatting
+│       ├── Encode response as JSON
+│       ├── Include status codes
+│       └── Set content-type header
+└── PDO Database Layer
+    ├── Connection pooling (static instance)
+    ├── Prepared statements (SQL injection prevention)
+    ├── Parameter binding (:param placeholders)
+    └── Exception handling
+
+        ↓ SQL Queries
+
+DATABASE LAYER (MySQL)
+├── users (id, username, password_hash, role, avatar_path)
+├── patients (id, user_id, DOB, phone, address, medical_history)
+├── doctors (id, name, specialization, schedule, availability)
+├── appointments (id, patient_id, doctor_id, date, time, status)
+├── wards (id, name, capacity, available_beds, department)
+├── billing (id, patient_id, amount, service, payment_status)
+├── inventory (id, item_name, quantity, unit_price, stock_level)
+├── reminders (id, patient_id, title, description, scheduled_at)
+├── notifications (id, user_id, title, message, read)
+└── activity_log (id, patient_id, action, module, timestamp)
+
+        ↑ Database returns data
+
+RESPONSE FLOW (Backend → Frontend)
+├── api.php returns JSON:
+│   {
+│     "status": "success",
+│     "data": {...results...},
+│     "message": "Operation completed"
+│   }
+└── HTTP Response (JSON header: application/json)
+
+        ↑ JavaScript fetch() receives
+
+FRONTEND RENDERING LAYER
+├── 1. Parse JSON response
+├── 2. Check status code & error messages
+├── 3. Update DOM with received data
+├── 4. Refresh UI elements
+├── 5. Show success/error notifications
+└── 6. Update localStorage/cache if needed
+
+        Result: User sees updated interface immediately
+
+========================================================================
+REAL-WORLD SCENARIO 1: ADMIN BOOKING AN APPOINTMENT
+========================================================================
+
+STEP 1: USER INTERACTION (Frontend)
+─────────────────────────────────────
+Admin clicks "New Appointment" button
+  ↓
+Advanced Appointment Modal opens
+  ↓
+Admin enters:
+  • Patient: "John Doe"
+  • Doctor: "Dr. Smith"
+  • Date: 2026-05-15
+  • Time: 10:30 AM
+  • Purpose: "Routine Checkup"
+  • Ward: "General Medicine"
+  ↓
+Admin clicks "Save Appointment" button
+
+
+STEP 2: DATA COLLECTION & VALIDATION (Frontend - app.js)
+──────────────────────────────────────────────────────────
+
+Form data collected:
+  patientId: 123
+  doctorId: 45
+  date: "2026-05-15"
+  time: "10:30"
+  purpose: "Routine Checkup"
+  wardId: 7
+  notes: "No special notes"
+
+Client-side validation checks:
+  ✓ Patient ID must exist
+  ✓ Doctor ID must exist
+  ✓ Date must be provided
+  ✓ Time must be provided
+  ✓ Purpose must be selected
+  ✓ Ward must be selected
+
+If all valid → Create AJAX call to server
+
+
+STEP 3: REQUEST TRANSMISSION (Network)
+───────────────────────────────────────
+
+HTTP POST Request:
+  URL: /api.php
+  Method: POST
+  Content-Type: application/json
+  
+JSON Body:
+  {
+    "action": "createAppointment",
+    "patientId": 123,
+    "doctorId": 45,
+    "date": "2026-05-15",
+    "time": "10:30",
+    "purpose": "Routine Checkup",
+    "wardId": 7,
+    "notes": "No special notes"
+  }
+
+
+STEP 4: SERVER-SIDE PROCESSING (Backend - api.php)
+────────────────────────────────────────────────────
+
+1. Parse Request
+   $action = "createAppointment"
+   
+2. Authentication Check
+   Check if user is logged in (currentUser() function)
+   If not logged in → Return 401 Unauthorized
+   
+3. Input Validation
+   Validate patientId is integer
+   Validate doctorId is integer
+   Check date format is YYYY-MM-DD
+   Check time format is HH:MM
+   If invalid → Return 400 Bad Request
+   
+4. Database Insert (Using Prepared Statement)
+   SQL: INSERT INTO appointments 
+        (patient_id, doctor_id, appointment_date, appointment_time, 
+         purpose, ward_id, notes, status, created_at)
+        VALUES (:patient_id, :doctor_id, :date, :time, 
+                :purpose, :ward_id, :notes, 'SCHEDULED', NOW())
+   
+   Execute with parameter binding:
+   • :patient_id = 123
+   • :doctor_id = 45
+   • :date = 2026-05-15
+   • :time = 10:30:00
+   • :purpose = Routine Checkup
+   • :ward_id = 7
+   • :notes = No special notes
+   • status = SCHEDULED (default)
+   • created_at = Current timestamp
+   
+5. Get New Appointment ID
+   appointmentId = 456 (from database last_insert_id())
+   
+6. Return JSON Response
+   {
+     "status": "success",
+     "appointmentId": 456,
+     "message": "Appointment created successfully"
+   }
+
+
+STEP 5: DATABASE OPERATION (MySQL)
+────────────────────────────────────
+
+INSERT Operation:
+  Table: appointments
+  New Row Added:
+    id: 456
+    patient_id: 123
+    doctor_id: 45
+    appointment_date: 2026-05-15
+    appointment_time: 10:30:00
+    purpose: Routine Checkup
+    ward_id: 7
+    notes: No special notes
+    status: SCHEDULED
+    created_at: 2026-05-07 14:30:25
+    updated_at: 2026-05-07 14:30:25
+
+Database also triggers:
+  • Log entry in activity_log
+  • Create notification for patient
+  • Update cache for doctor's schedule
+
+
+STEP 6: RESPONSE PROCESSING (Frontend)
+─────────────────────────────────────────
+
+JavaScript receives response:
+  if (response.status === 'success') {
+    // Show success notification
+    showNotification('Appointment created successfully!', 'success');
+    
+    // Close the modal
+    closeAdvancedAppointmentModal();
+    
+    // Refresh the appointments table
+    loadAppointmentsList();
+    
+    // Log to console
+    console.log('Created appointment #' + response.appointmentId);
+  } else {
+    // Show error message to user
+    showNotification(response.message, 'error');
+  }
+
+
+STEP 7: USER SEES UPDATE (Frontend)
+───────────────────────────────────────
+
+Modal closes automatically
+  ↓
+Appointments table refreshes
+  ↓
+New appointment appears in table:
+  Patient: John Doe
+  Doctor: Dr. Smith
+  Date: 2026-05-15 10:30 AM
+  Status: SCHEDULED
+  Ward: General Medicine
+  ↓
+Success notification displays: "Appointment created successfully!"
+
+COMPLETE FLOW FINISHED ✓
+
+========================================================================
+REAL-WORLD SCENARIO 2: PATIENT VIEWING THEIR APPOINTMENTS
+========================================================================
+
+STEP 1: AUTHENTICATION
+──────────────────────
+Patient enters username & password on patient_login.php
+  ↓
+Backend validates credentials against users table
+  ↓
+If valid:
+  • Session created with patient ID
+  • Session ID stored in browser cookie
+  • Redirect to index.php (patient dashboard)
+
+
+STEP 2: DASHBOARD LOADS
+─────────────────────────
+Patient's browser loads index.php with role='PATIENT'
+  ↓
+JavaScript (app.js) checks currentUser
+  ↓
+Calls: fetch('/api.php?action=getPatientDashboardData')
+
+
+STEP 3: API PROCESSES REQUEST
+──────────────────────────────
+api.php receives action=getPatientDashboardData
+  ↓
+Check session → Patient ID = 123
+  ↓
+Query 1: SELECT * FROM appointments 
+         WHERE patient_id = 123
+         ORDER BY appointment_date DESC
+  ↓
+Query 2: SELECT * FROM reminders 
+         WHERE patient_id = 123 AND status = 'ACTIVE'
+  ↓
+Query 3: SELECT * FROM notifications 
+         WHERE user_id = 123 AND read = 0
+  ↓
+Query 4: SELECT * FROM activity_log 
+         WHERE patient_id = 123 
+         LIMIT 20
+
+
+STEP 4: DATA PROCESSING
+────────────────────────
+API collects results and separates appointments:
+  
+  Upcoming Appointments (date > today):
+    • Appointment 1: 2026-05-15 10:30 AM - Dr. Smith
+    • Appointment 2: 2026-05-20 02:00 PM - Dr. Johnson
+  
+  Past Appointments (date <= today):
+    • Appointment 3: 2026-04-15 09:00 AM - Dr. Brown
+    • Appointment 4: 2026-03-20 11:30 AM - Dr. Davis
+  
+  Reminders:
+    • Take medication
+    • Drink water
+    • Exercise regularly
+  
+  Notifications:
+    • Appointment confirmed
+    • Reminder set
+
+
+STEP 5: API RETURNS JSON RESPONSE
+──────────────────────────────────
+{
+  "status": "success",
+  "appointments": [
+    {
+      "id": 456,
+      "patientId": 123,
+      "doctorId": 45,
+      "doctorName": "Dr. Smith",
+      "specialization": "General Medicine",
+      "date": "2026-05-15",
+      "time": "10:30",
+      "purpose": "Routine Checkup",
+      "ward": "General Medicine",
+      "status": "SCHEDULED"
+    },
+    ...more appointments...
+  ],
+  "upcoming_appointments": [
+    ...filtered upcoming only...
+  ],
+  "past_appointments": [
+    ...filtered past only...
+  ],
+  "reminders": [
+    {"id": 1, "title": "Take medication", "type": "HEALTH"},
+    ...
+  ],
+  "notifications": [
+    {"id": 1, "title": "Appointment confirmed", "read": false},
+    ...
+  ],
+  "activity": [
+    {"id": 1, "action": "VIEWED_PROFILE", "timestamp": "2026-05-07 10:00"},
+    ...
+  ]
+}
+
+
+STEP 6: FRONTEND RENDERS DATA
+──────────────────────────────
+JavaScript processes response:
+  
+  1. Create appointment cards for upcoming appointments
+  2. Create appointment cards for past appointments  
+  3. Display reminders list
+  4. Display notifications
+  5. Show activity log
+  6. Enable reschedule/cancel buttons on appointments
+
+
+STEP 7: PATIENT SEES INTERFACE
+───────────────────────────────
+Patient Dashboard displays:
+  
+  ┌────────────────────────────────────────────┐
+  │ Welcome, [Patient Name]                     │
+  ├────────────────────────────────────────────┤
+  │                                             │
+  │ UPCOMING APPOINTMENTS                       │
+  │ ┌─────────────────────────────────────────┐ │
+  │ │ Dr. Smith - General Medicine             │ │
+  │ │ Date: May 15, 2026 | Time: 10:30 AM     │ │
+  │ │ Purpose: Routine Checkup | Ward: Gen Med│ │
+  │ │ [Reschedule] [Cancel]                    │ │
+  │ └─────────────────────────────────────────┘ │
+  │                                             │
+  │ HEALTH REMINDERS                           │
+  │ • Take medication daily                     │
+  │ • Drink water regularly                     │
+  │                                             │
+  │ NOTIFICATIONS (2 unread)                   │
+  │ • Appointment confirmed                     │
+  │ • Reminder set for tomorrow                 │
+  │                                             │
+  └────────────────────────────────────────────┘
+  
+COMPLETE FLOW FINISHED ✓
+
+========================================================================
+KEY CONCEPTS IN DATA FLOW
+========================================================================
+
+1. REQUEST ROUTING
+──────────────────
+Frontend sends: ?action=getAppointments
+  ↓
+Backend reads: $action = $_GET['action']
+  ↓
+Backend routes: if ($action === 'getAppointments') { ... }
+  ↓
+Appropriate handler function executes
+
+
+2. SESSION MANAGEMENT
+─────────────────────
+User logs in
+  ↓
+Session created: $_SESSION['user_id'] = 123
+  ↓
+Session ID stored in browser cookie
+  ↓
+Every API request includes session cookie
+  ↓
+Backend checks: currentUser() gets $_SESSION['user_id']
+  ↓
+If session valid: Process request
+If session invalid: Return 401 Unauthorized
+
+
+3. SQL INJECTION PREVENTION
+─────────────────────────────
+VULNERABLE (DON'T USE):
+  $sql = "SELECT * FROM users WHERE username = '$username'";
+  // If $username = "'; DROP TABLE users; --"
+  // Actual SQL becomes: SELECT * FROM users WHERE username = ''; 
+  //   DROP TABLE users; --'
+  // This DELETES the entire users table!
+
+SAFE (USE THIS):
+  $stmt = $pdo->prepare(
+    "SELECT * FROM users WHERE username = :username"
+  );
+  $stmt->execute([':username' => $username]);
+  // Parameter value is treated as data, never as code
+  // No matter what $username contains, it's safe
+
+
+4. REAL-TIME UPDATES
+─────────────────────
+setInterval(function() {
+  fetch('/api.php?action=getAppointments')
+    .then(response => response.json())
+    .then(data => {
+      updateAppointmentsUI(data);
+    });
+}, 10000);  // Every 10 seconds
+
+This means:
+  • Every 10 seconds, app checks for new appointments
+  • If new appointments exist, UI updates automatically
+  • User sees changes without refreshing page
+
+
+5. ERROR HANDLING
+──────────────────
+Frontend tries to create appointment
+  ↓
+Backend validates input
+  ↓
+If patient ID missing → Return 400 with error message
+If date is invalid → Return 400 with error message
+If database query fails → Return 500 with error message
+  ↓
+Frontend checks response.status
+  ↓
+If error → Show error message to user
+If success → Show success message and refresh UI
+
+
+6. DATA TRANSFORMATION
+───────────────────────
+Raw Input (from user):
+  patientName: "John Doe"
+  
+Database Query:
+  Find patient with name "John Doe"
+  Get their patient ID (e.g., 123)
+  
+Store as:
+  patientId: 123
+  
+Send to Backend:
+  "patientId": 123
+  
+Store in Database:
+  patient_id INT = 123
+  
+Return in Response:
+  "patientId": 123
+
+========================================================================
+DATA TYPES & TRANSFORMATIONS
+========================================================================
+
+INPUT DATA (Frontend form)
+──────────────────────────
+{
+  patientId: 123,              // Number
+  doctorId: 45,                // Number
+  date: "2026-05-15",          // String (YYYY-MM-DD)
+  time: "10:30",               // String (HH:MM)
+  purpose: "Routine Checkup",  // String
+  wardId: 7                    // Number
+}
+
+
+BACKEND PROCESSING
+──────────────────
+// Type casting to correct types
+$patientId = (int) $_POST['patientId'];     // Cast to integer
+$doctorId = (int) $_POST['doctorId'];
+$date = trim((string) $_POST['date']);      // Trim whitespace
+$time = trim((string) $_POST['time']);
+
+// Validation
+if ($patientId <= 0) { error(); }           // Valid patient?
+if ($date < date('Y-m-d')) { error(); }     // Date in future?
+
+// Data normalized and validated
+
+
+DATABASE STORAGE
+────────────────
+CREATE TABLE appointments (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  patient_id INT NOT NULL,          // Integer reference
+  doctor_id INT NOT NULL,           // Integer reference
+  appointment_date DATE,            // Date format: YYYY-MM-DD
+  appointment_time TIME,            // Time format: HH:MM:SS
+  purpose VARCHAR(255),             // String up to 255 chars
+  status ENUM('SCHEDULED', 'COMPLETED', 'CANCELLED'),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+API RESPONSE
+────────────
+{
+  "status": "success",
+  "data": {
+    "appointmentId": 456,
+    "patientId": 123,
+    "doctorName": "Dr. Smith",
+    "date": "2026-05-15",
+    "time": "10:30",
+    "purpose": "Routine Checkup"
+  }
+}
+
+
+FRONTEND DISPLAY
+─────────────────
+JavaScript converts and displays:
+  
+  Date: "2026-05-15" → Display: "May 15, 2026"
+  Time: "10:30" → Display: "10:30 AM"
+  Status: "SCHEDULED" → Display: "Scheduled" (blue badge)
+
+User sees human-readable format
+
+========================================================================
+SECURITY & VALIDATION AT EACH LAYER
+========================================================================
+
+FRONTEND VALIDATION
+────────────────────
+Purpose: Quick feedback to user (UX)
+Example: if (!patientName) alert("Patient required");
+Benefit: Reduces invalid requests to server
+Limitation: Can be bypassed (not secure)
+
+
+BACKEND VALIDATION
+────────────────────
+Purpose: Prevent invalid/malicious data reaching database
+Example: if (!$patientId || $patientId <= 0) return error();
+Benefit: Secure, can't be bypassed
+Limitation: More processing overhead
+
+Backend checks:
+  • Required fields exist
+  • Data types are correct
+  • Values are in valid range
+  • User has permission (authentication)
+  • SQL injection attempts prevented (prepared statements)
+
+
+DATABASE CONSTRAINTS
+─────────────────────
+Purpose: Last line of defense
+Example: FOREIGN KEY (patient_id) REFERENCES patients(id)
+Benefit: Prevents orphaned data
+Limitation: May not give detailed error messages
+
+Database enforces:
+  • PRIMARY KEY uniqueness
+  • FOREIGN KEY relationships
+  • NOT NULL requirements
+  • CHECK constraints
+  • UNIQUE constraints
+
+========================================================================
+PERFORMANCE OPTIMIZATIONS
+========================================================================
+
+1. CONNECTION POOLING
+──────────────────────
+static $pdo = null;
+if ($pdo instanceof PDO) {
+    return $pdo;  // Reuse existing connection
+}
+$pdo = new PDO(...);  // Create once, reuse forever
+
+Benefit: Avoids creating new DB connection each request
+
+
+2. PREPARED STATEMENTS
+───────────────────────
+$stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
+$stmt->execute([':id' => 123]);
+
+Benefit: 
+  • Faster on repeated queries
+  • Prevents SQL injection
+  • Database can optimize query plan
+
+
+3. DATABASE INDEXES
+─────────────────────
+CREATE INDEX idx_patient_id ON appointments(patient_id);
+CREATE INDEX idx_doctor_id ON appointments(doctor_id);
+
+Benefit: Queries search indexed columns faster
+
+
+4. PAGINATION
+───────────────
+SELECT * FROM appointments LIMIT 100, 50;
+Limit: max 250 rows per request
+
+Benefit: Reduces data transfer, faster response
+
+
+5. CLIENT-SIDE CACHING
+───────────────────────
+localStorage.setItem('user_theme', 'dark');
+localStorage.getItem('user_theme');
+
+Benefit: Stores user preferences locally, no server roundtrip
+
+
+6. LAZY LOADING
+────────────────
+Load patient dashboard only when tab opens
+Load appointment details only when modal opens
+
+Benefit: Faster initial page load
+
+========================================================================
+ADMIN VS PATIENT DATA ISOLATION
+========================================================================
+
+The system separates admin and patient data/features:
+
+ADMIN ACCESS (role = 'ADMIN' or similar)
+─────────────────────────────────────────
+Can access:
+  • All patients' data
+  • All appointments
+  • All doctors
+  • All wards
+  • Billing information
+  • Inventory management
+  • System reports
+  • User management
+
+API check:
+  if ($user['role'] === 'ADMIN' || $user['role'] === 'DOCTOR') {
+    // Full access
+  } else {
+    return 401 Unauthorized;
+  }
+
+
+PATIENT ACCESS (role = 'PATIENT')
+──────────────────────────────────
+Can access:
+  • Only their own appointments
+  • Only their own health reminders
+  • Only their own notifications
+  • Only their own activity log
+  • Only their own profile
+
+API check:
+  if ($user['role'] === 'PATIENT') {
+    // Only show data for current patient
+    $patientId = $user['patient_id'];
+    SELECT * FROM appointments 
+    WHERE patient_id = $patientId;
+  }
+
+
+DATA ISOLATION EXAMPLE
+───────────────────────
+Patient tries to view another patient's records:
+  
+Frontend: GET /api.php?action=getPatient&patientId=999
+  ↓
+Backend checks:
+  $requestedPatientId = 999;
+  $currentUser = currentUser();
+  
+  if ($currentUser['role'] === 'PATIENT') {
+    // Patient can only access their own data
+    if ($requestedPatientId != $currentUser['patient_id']) {
+      return 401 Unauthorized;  // Block access
+    }
+  }
+  
+Result: Patient 123 cannot view Patient 999's data ✓
+
+========================================================================
+SUMMARY
+========================================================================
+
+The PMS system architecture:
+
+1. Frontend Layer
+   - HTML: Structure (index.php, forms)
+   - CSS: Styling (styles.css, dark mode via variables)
+   - JavaScript: Logic (app.js, AJAX calls, DOM updates)
+
+2. Backend Layer
+   - PHP: Server-side logic (api.php, auth.php)
+   - PDO: Database abstraction (prepared statements)
+   - Sessions: User authentication & authorization
+
+3. Database Layer
+   - MySQL: Persistent data storage
+   - Tables: Users, Patients, Doctors, Appointments, etc.
+   - Relationships: Foreign keys linking related data
+
+Data Flow:
+  User Input → Frontend Validation → AJAX POST
+    → Backend Validation → Database Query
+    → Database returns data → Backend processes
+    → JSON response → Frontend updates UI
+    → User sees result
+
+Security:
+  - Frontend validation (UX feedback)
+  - Backend validation (prevent invalid data)
+  - SQL injection prevention (prepared statements)
+  - Session management (user authentication)
+  - Role-based access control (admin vs patient)
+  - Database constraints (last line of defense)
+
+The entire system is designed to be secure, scalable, and user-friendly.

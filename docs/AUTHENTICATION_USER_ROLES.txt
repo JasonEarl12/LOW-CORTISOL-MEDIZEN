@@ -1,0 +1,914 @@
+PMS AUTHENTICATION & USER ROLE SYSTEM - TEXT VERSION
+
+========================================================================
+OVERVIEW
+========================================================================
+
+The PMS system uses a role-based access control (RBAC) model with 
+two main user types:
+
+1. ADMIN (staff, doctors)
+   - Can manage all patients, appointments, billing, inventory
+   - Can view all system data
+   
+2. PATIENT (regular users)
+   - Can only view their own appointments, reminders, notifications
+   - Cannot access other patients' data
+
+
+Authentication Flow:
+
+Login Form
+  ↓ (Submit username & password)
+Backend (auth.php)
+  ↓ (Validate credentials)
+Database (MySQL)
+  ↓ (Verify password hash)
+Session Created
+  ↓
+Dashboard (index.php)
+  ↓
+All API calls include session verification
+
+========================================================================
+PASSWORD PROCESSING & SECURITY
+========================================================================
+
+HOW PASSWORDS ARE STORED
+─────────────────────────
+
+STEP 1: User Registration / Login
+────────────────────────────────
+User enters password: "MySecurePassword123"
+
+
+STEP 2: Frontend Validation
+────────────────────────────
+Check password is not empty
+Check password is at least 6 characters
+Check password is not too long
+
+If any validation fails → Show error to user
+If valid → Continue to Step 3
+
+
+STEP 3: Send to Backend (auth.php)
+────────────────────────────────────
+POST /auth.php
+Body:
+  action: login
+  username: "admin"
+  password: "MySecurePassword123"
+  csrf_token: (security token)
+
+
+STEP 4: Retrieve User from Database
+────────────────────────────────────
+Query: SELECT * FROM users 
+       WHERE username = 'admin'
+
+Result: {
+  id: 1,
+  username: "admin",
+  password_hash: "$2y$10$8D7v8KvdH3/z.zqjVpO8JuVv3M7z8v8...",
+  role: "ADMIN"
+}
+
+
+STEP 5: Verify Password Hash
+──────────────────────────────
+Use PHP's password_verify() function:
+
+password_verify("MySecurePassword123", "$2y$10$8D7v8...")
+  ↓
+PHP internally hashes the entered password
+  ↓
+Compares it with the stored hash
+  ↓
+If hashes match → Password is CORRECT ✓
+If hashes don't match → Password is WRONG ✗
+
+
+STEP 6: Create Session (On Successful Login)
+───────────────────────────────────────────────
+session_regenerate_id(true)
+  └─ Create new session ID, delete old one (prevent session hijacking)
+
+$_SESSION['user_id'] = 1
+$_SESSION['username'] = 'admin'
+$_SESSION['role'] = 'ADMIN'
+$_SESSION['login_time'] = current_time
+$_SESSION['last_activity'] = current_time
+$_SESSION['csrf_token'] = random_token
+
+
+STEP 7: Send Session Cookie to Browser
+─────────────────────────────────────────
+HTTP Response Header:
+  Set-Cookie: PHPSESSID=abc123xyz; HttpOnly; Secure
+
+Browser stores session cookie automatically
+Every future request includes this cookie
+
+
+STEP 8: Redirect to Dashboard
+──────────────────────────────
+If admin → Redirect to /index.php?role=admin
+If patient → Redirect to /index.php?role=patient
+
+
+STEP 9: User Logged In
+──────────────────────
+User can now access dashboard
+All API calls include session cookie
+Backend verifies session exists before processing
+
+
+========================================================================
+PASSWORD STORAGE IN DATABASE
+========================================================================
+
+NEVER DO THIS (SECURITY BREACH):
+─────────────────────────────────
+
+INSERT INTO users (username, password) 
+VALUES ('admin', 'MySecurePassword123');
+
+Problem: If hacker gets database, they have all passwords!
+They can log in as any user!
+
+
+ALWAYS DO THIS (INDUSTRY STANDARD):
+────────────────────────────────────
+
+$password = 'MySecurePassword123';
+$password_hash = password_hash($password, PASSWORD_BCRYPT);
+
+Result: $2y$10$8D7v8KvdH3/z.zqjVpO8JuVv3M7z8...
+
+INSERT INTO users (username, password_hash) 
+VALUES ('admin', '$2y$10$8D7v8KvdH3/z.zqjVpO8...');
+
+Benefit: If hacker gets database, they only see hashes
+They CANNOT reverse the hash to get the password
+The password is effectively uncrackable
+
+
+========================================================================
+BCRYPT PASSWORD HASHING ALGORITHM
+========================================================================
+
+WHAT IS BCRYPT?
+───────────────
+A password hashing algorithm specifically designed for passwords.
+
+Features:
+  • Slow by design (prevents brute-force attacks)
+  • Adds "salt" automatically (random unique data)
+  • Can increase difficulty as computers get faster
+  • Industry standard (used by major tech companies)
+
+
+HASH FORMAT
+───────────
+$2y$10$8D7v8KvdH3/z.zqjVpO8JuVv3M7z8v8...
+
+$2y$ = BCrypt algorithm identifier
+10 = Cost factor (2^10 = 1024 rounds of hashing)
+$ = Separator
+8D7v8KvdH3/z.zqjVpO8JuVv3M7z8... = Actual hash
+
+
+UNIQUE HASHES
+──────────────
+Input: "MyPassword"
+  ↓
+Hash 1: $2y$10$abc123xyz... (using salt A)
+Hash 2: $2y$10$def456uvw... (using salt B)
+Hash 3: $2y$10$ghi789rst... (using salt C)
+
+Same password produces DIFFERENT hashes!
+But password_verify() knows how to check them all.
+
+
+PASSWORD VERIFICATION
+──────────────────────
+During login:
+
+User enters: "MyPassword"
+Stored hash: "$2y$10$abc123xyz..."
+
+password_verify("MyPassword", "$2y$10$abc123xyz...")
+  ↓
+Step 1: Extract salt from hash
+Step 2: Hash "MyPassword" using that salt
+Step 3: Compare with stored hash
+Step 4: Result: match or no match
+
+
+========================================================================
+USERNAME VALIDATION
+========================================================================
+
+USERNAME REQUIREMENTS
+──────────────────────
+
+1. NOT EMPTY
+   if (empty($username)) {
+     error("Username required");
+   }
+
+2. MINIMUM LENGTH (3 characters)
+   if (strlen($username) < 3) {
+     error("Username must be at least 3 characters");
+   }
+
+3. MAXIMUM LENGTH (50 characters)
+   if (strlen($username) > 50) {
+     error("Username must be less than 50 characters");
+   }
+
+4. VALID CHARACTERS (optional)
+   Allowed: a-z, A-Z, 0-9, underscore (_)
+   Not allowed: special characters like @, #, !, &, etc.
+   
+   if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
+     error("Invalid characters in username");
+   }
+
+
+USERNAME UNIQUENESS
+────────────────────
+
+Check if username already exists:
+
+SELECT id FROM users WHERE username = 'admin'
+
+If result found → Username taken (error)
+If no result → Username available (ok)
+
+
+USERNAME DURING LOGIN
+──────────────────────
+
+Step 1: Find user by username
+  SELECT * FROM users WHERE username = 'admin'
+  
+  Result found? → Continue
+  No result? → Error "User not found" (generic message)
+             (Don't reveal which usernames exist for security)
+
+Step 2: Verify password for this user
+  password_verify(password, user['password_hash'])
+  
+  Match? → Create session
+  No match? → Error "Invalid credentials" (generic message)
+            (Don't reveal if username or password was wrong)
+
+Step 3: Store session
+  $_SESSION['user_id'] = user['id']
+  $_SESSION['username'] = user['username']
+
+Note: Session stores numeric user ID, not username
+This prevents tampering (harder to guess valid user IDs)
+
+
+========================================================================
+ADMIN USER MANAGEMENT
+========================================================================
+
+ADMIN USER STRUCTURE
+─────────────────────
+
+users table:
+  ├── id (unique number, primary key)
+  ├── username (login name, must be unique)
+  ├── password_hash (hashed password, never plaintext)
+  ├── role (ADMIN, DOCTOR, STAFF, etc.)
+  ├── avatar_path (profile picture URL)
+  ├── created_at (when user was created)
+  └── updated_at (when user was last modified)
+
+
+CREATING ADMIN USERS
+─────────────────────
+
+Automatic default admin (in config.php):
+
+If NO users exist in database:
+  1. Create user with username = "admin"
+  2. Hash password: "admin123" (change on first login!)
+  3. Set role = "ADMIN"
+  4. INSERT into users table
+
+Every app startup:
+  ensureDefaultAdmin($pdo);
+  ↓
+  Check if any users exist
+  ↓
+  If not → Create default admin
+  If yes → Do nothing
+
+
+ADMIN LOGIN FLOW
+──────────────────
+
+1. Admin visits /admin_login.php
+2. Enters username: "admin"
+3. Enters password: "admin123"
+4. Form submits to auth.php
+5. Backend checks:
+   a) Does user exist?
+   b) Does password match?
+   c) Is user role ADMIN?
+   
+   If all yes → Create session
+   If any no → Error message
+6. Session created with role = 'ADMIN'
+7. Redirect to dashboard: /index.php?role=admin
+
+
+ADMIN PERMISSIONS
+───────────────────
+
+On every API request, backend checks:
+
+function requireAdminRole() {
+  $user = currentUser();
+  
+  if (!$user) {
+    error(401, "Not logged in");
+  }
+  
+  if ($user['role'] !== 'ADMIN' && $user['role'] !== 'DOCTOR') {
+    error(403, "Not authorized");
+  }
+}
+
+Example: Delete patient
+
+if ($action === 'deletePatient') {
+  requireAdminRole();  // ← Check permission first
+  
+  // Only admins reach this point
+  // Delete patient logic here
+}
+
+Non-admin trying to delete → Error 403 Forbidden
+
+
+ADMIN CAN:
+──────────
+• Create patients
+• Update patient information
+• Delete patient records
+• Create appointments for any patient
+• Update any appointment
+• Delete any appointment
+• View all billing information
+• Manage inventory
+• View all reports
+• Manage system users
+
+
+========================================================================
+PATIENT USER MANAGEMENT
+========================================================================
+
+PATIENT USER STRUCTURE
+───────────────────────
+
+Two tables linked by foreign key:
+
+users table:
+  ├── id (unique number)
+  ├── username (login name)
+  ├── password_hash (hashed password)
+  ├── role = 'PATIENT'
+  └── avatar_path
+
+patients table:
+  ├── id (unique number)
+  ├── user_id (→ links to users.id)
+  ├── date_of_birth (patient's birthday)
+  ├── phone (contact number)
+  ├── address (home address)
+  ├── medical_history (health notes)
+  └── other medical fields
+
+
+CREATING PATIENT USERS
+───────────────────────
+
+When admin creates new patient:
+
+Step 1: Create users entry
+  INSERT INTO users 
+  (username, password_hash, role)
+  VALUES ('john_doe', '$2y$10$...', 'PATIENT');
+  
+  user_id = 123 (auto-generated)
+
+Step 2: Create patients entry
+  INSERT INTO patients 
+  (user_id, date_of_birth, phone, address)
+  VALUES (123, '1990-05-15', '555-1234', '123 Main St');
+  
+  patient_id = 456 (auto-generated)
+
+Now patient can login:
+  Username: john_doe
+  Password: (set by admin, should change on first login)
+
+
+PATIENT LOGIN FLOW
+────────────────────
+
+1. Patient visits /patient_login.php
+2. Enters username: "john_doe"
+3. Enters password: (their password)
+4. Form submits to auth.php
+5. Backend checks:
+   a) Does user exist?
+   b) Does password match?
+   c) Is user role PATIENT?
+   
+   If all yes → Create session
+   If any no → Error message
+6. Session created with:
+   - user_id = 123
+   - role = 'PATIENT'
+   - patient_id = 456 (from patients table)
+7. Redirect to dashboard: /index.php?role=patient
+
+
+PATIENT PERMISSIONS
+─────────────────────
+
+function requirePatientRole() {
+  $user = currentUser();
+  
+  if (!$user || $user['role'] !== 'PATIENT') {
+    error(403, "Not authorized");
+  }
+}
+
+Patient can ONLY access their own data:
+
+function getPatientAppointments() {
+  requirePatientRole();
+  
+  $user = currentUser();
+  $patientId = $user['patient_id'];  // ← From session
+  
+  // Query only THIS patient's data
+  SELECT * FROM appointments 
+  WHERE patient_id = $patientId
+}
+
+Security: Even if patient tries to access someone else's data:
+  GET /api.php?action=getAppointments&patientId=999
+  
+  Backend ignores the patientId parameter!
+  Uses patientId from session instead:
+  $_SESSION['patient_id'] = 456
+  
+  Result: Patient 456 can ONLY see patient 456's data
+         Cannot access patient 999's data
+
+
+PATIENT CAN:
+────────────
+• View own appointments
+• Reschedule own appointment
+• Cancel own appointment
+• View own health reminders
+• View own notifications
+• View own activity log
+• View own profile
+• Change password
+
+
+PATIENT CANNOT:
+────────────────
+• View other patients' data
+• Create appointments
+• Delete appointments
+• View billing
+• Access inventory
+• View reports
+• Manage users
+
+
+========================================================================
+ADMIN & PATIENT DATA EXCHANGE
+========================================================================
+
+SCENARIO 1: ADMIN CREATES APPOINTMENT FOR PATIENT
+──────────────────────────────────────────────────
+
+Step 1: Admin Interface
+  Admin clicks "New Appointment"
+  Modal opens
+  Admin searches for patient: "John Doe"
+  
+  API call: GET /api.php?action=searchPatients&query=john
+  Returns: [
+    {id: 123, name: "John Doe", ...},
+    {id: 456, name: "John Smith", ...}
+  ]
+  
+  Admin selects: "John Doe" (patient_id: 123)
+  Admin selects doctor: "Dr. Smith" (doctor_id: 45)
+  Admin enters date: 2026-05-15
+  Admin enters time: 10:30 AM
+
+Step 2: Form Submission
+  Click "Save Appointment"
+  Data sent: {
+    action: 'createAppointment',
+    patientId: 123,
+    doctorId: 45,
+    date: '2026-05-15',
+    time: '10:30',
+    ...
+  }
+
+Step 3: Backend Processing (api.php)
+  Check: Is user admin?
+    Yes → Continue
+    No → Error 403 Forbidden
+  
+  Check: Does patient 123 exist?
+    Yes → Continue
+    No → Error 400 Bad Request
+  
+  Check: Does doctor 45 exist?
+    Yes → Continue
+    No → Error 400 Bad Request
+  
+  Validate: Is date in future?
+    Yes → Continue
+    No → Error 400 Bad Request
+  
+  INSERT into database:
+    INSERT INTO appointments (patient_id, doctor_id, date, time, ...)
+    VALUES (123, 45, '2026-05-15', '10:30:00', ...)
+    
+  Side effects:
+    • Get appointment_id = 456
+    • Log action in activity_log
+    • Create notification for patient 123
+
+Step 4: API Response
+  Return: {
+    status: 'success',
+    appointmentId: 456,
+    message: 'Appointment created'
+  }
+
+Step 5: Patient Sees Update
+  Patient logs in
+  Dashboard loads
+  Gets data: fetch('/api.php?action=getPatientDashboardData')
+  
+  Backend query:
+    SELECT * FROM appointments 
+    WHERE patient_id = 123
+    
+  Results include appointment 456 created by admin
+  
+  Patient sees:
+    Doctor: Dr. Smith
+    Date: May 15, 2026
+    Time: 10:30 AM
+    Status: SCHEDULED
+    [Reschedule] [Cancel] buttons
+
+
+SCENARIO 2: PATIENT RESCHEDULES APPOINTMENT
+──────────────────────────────────────────────
+
+Step 1: Patient Views Appointment
+  Patient sees appointment 456
+  Clicks "Reschedule" button
+
+Step 2: Reschedule Form
+  Selects new date: 2026-05-20
+  Selects new time: 02:00 PM
+
+Step 3: Form Submission
+  Data sent: {
+    action: 'updateAppointment',
+    appointmentId: 456,
+    newDate: '2026-05-20',
+    newTime: '14:00'
+  }
+
+Step 4: Backend Processing (api.php)
+  Check: Is user logged in?
+    Yes → Continue
+    No → Error 401 Unauthorized
+  
+  Check: Is this patient's appointment?
+    Query: SELECT * FROM appointments 
+           WHERE id = 456 AND patient_id = ?
+    
+    Found? → Continue
+    Not found? → Error 403 Forbidden
+           (Patient cannot reschedule other's appointment)
+  
+  Validate: Is new date valid?
+    Yes → Continue
+    No → Error 400 Bad Request
+  
+  UPDATE database:
+    UPDATE appointments 
+    SET appointment_date = '2026-05-20',
+        appointment_time = '14:00:00'
+    WHERE id = 456
+  
+  Side effects:
+    • Log in activity_log
+    • Create notification for admin/doctor
+
+Step 5: API Response
+  Return: {
+    status: 'success',
+    message: 'Appointment rescheduled'
+  }
+
+Step 6: Admin Sees Update
+  Admin dashboard auto-refreshes (every 10 seconds)
+  Sees appointment 456 now on May 20 instead of May 15
+  Notification: "Patient rescheduled appointment"
+
+
+NOTIFICATION FLOW
+───────────────────
+
+Admin creates appointment for patient 123
+  ↓
+INSERT INTO notifications (user_id, title, message)
+VALUES (123, 'New Appointment', 'Dr. Smith scheduled for May 15')
+  ↓
+Patient logs in
+  ↓
+Dashboard loads
+API returns: unread notifications
+  ↓
+Patient sees notification badge (e.g., "2 unread")
+  ↓
+Patient clicks notification
+  ↓
+UPDATE notifications SET read = 1
+  ↓
+Admin can see patient viewed notification (via logs)
+
+
+DATA ISOLATION PREVENTS LEAKS
+──────────────────────────────
+
+Patient tries to view other patient's appointment:
+  GET /api.php?appointmentId=999
+  
+Backend:
+  $user = currentUser();
+  $patientId = $user['patient_id'];  // e.g., 123
+  
+  SELECT * FROM appointments 
+  WHERE id = 999 AND patient_id = 123
+  
+  Result: Empty (appointment 999 doesn't belong to patient 123)
+  Response: Error "Appointment not found"
+  
+  Patient 123 CANNOT see patient 999's appointments ✓
+
+
+========================================================================
+SESSION MANAGEMENT
+========================================================================
+
+SESSION LIFECYCLE
+──────────────────
+
+LOGIN:
+  User submits login form
+    ↓
+  Backend validates credentials
+    ↓
+  session_destroy()  ← Clear old session
+    ↓
+  session_start()  ← Create new session
+    ↓
+  session_regenerate_id(true)  ← New session ID
+    ↓
+  $_SESSION['user_id'] = 123
+  $_SESSION['role'] = 'ADMIN'
+  $_SESSION['username'] = 'admin'
+  $_SESSION['login_time'] = time()
+  $_SESSION['last_activity'] = time()
+    ↓
+  Send session cookie to browser
+    ↓
+  Redirect to dashboard
+
+
+ONGOING USAGE:
+  Browser makes request to /api.php
+    ↓
+  Browser sends session cookie automatically
+    ↓
+  Backend receives cookie
+    ↓
+  session_start()  ← Restore session
+    ↓
+  currentUser() reads $_SESSION
+    ↓
+  if ($_SESSION['user_id'] exists) {
+      ✓ User is logged in
+      Continue processing request
+    } else {
+      ✗ User not logged in
+      Error 401 Unauthorized
+    }
+
+
+TIMEOUT:
+  Frontend JavaScript tracks inactivity
+    INACTIVITY_TIME = 30 * 60 * 1000  // 30 minutes
+  
+  When 30 minutes pass with no user activity:
+    1. Show warning: "You'll be logged out in 5 minutes"
+    2. If no activity in next 5 minutes:
+       3. Call: invalidateSession()
+       4. Session destroyed
+       5. Redirect to login page
+
+
+LOGOUT:
+  User clicks "Logout"
+    ↓
+  Frontend calls: fetch('/api.php?action=logout')
+    ↓
+  Backend (auth.php):
+    $_SESSION = []  ← Clear session
+    session_destroy()  ← Destroy session file
+    session_write_close()  ← Close session
+    ↓
+  Backend returns logout status
+    ↓
+  Frontend redirects to login page
+    ↓
+  User logged out
+  Browser deletes session cookie
+
+
+========================================================================
+SECURITY IMPLEMENTATION
+========================================================================
+
+SQL INJECTION PREVENTION
+─────────────────────────
+
+VULNERABLE CODE (DON'T USE):
+  $username = $_POST['username'];
+  $sql = "SELECT * FROM users WHERE username = '$username'";
+  $result = $pdo->query($sql);
+  
+  If $username = "admin' OR '1'='1"
+  SQL becomes: WHERE username = 'admin' OR '1'='1'
+  This returns ALL users!
+  
+  If $username = "'; DROP TABLE users; --"
+  SQL becomes: WHERE username = ''; DROP TABLE users; --'
+  This DELETES the entire users table!
+
+
+SAFE CODE (USE THIS):
+  $username = $_POST['username'];
+  $stmt = $pdo->prepare(
+    "SELECT * FROM users WHERE username = :username"
+  );
+  $stmt->execute([':username' => $username]);
+  
+  Prepared statements treat input as DATA, never as CODE
+  No matter what $username contains, it's safe
+  Prevents all SQL injection attacks
+
+
+PASSWORD VERIFICATION SECURITY
+────────────────────────────────
+
+WRONG:
+  if ($password === $stored_password) { }
+  
+  Problem: Timing attacks
+  Different equality times reveal password length/content
+  Vulnerable users
+
+
+CORRECT:
+  if (password_verify($password, $hash)) { }
+  
+  Constant-time comparison
+  Always takes same amount of time
+  Timing attacks won't work
+
+
+ROLE-BASED ACCESS CONTROL
+───────────────────────────
+
+Every sensitive operation checks role:
+
+if ($action === 'deletePatient') {
+  $user = currentUser();
+  
+  if (!$user) {
+    error(401, "Not logged in");
+  }
+  
+  if ($user['role'] !== 'ADMIN') {
+    error(403, "Only admins can delete patients");
+  }
+  
+  // Safe to proceed
+  deletePatient($patientId);
+}
+
+
+CSRF PROTECTION
+────────────────
+
+Generate token on login:
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+Include in forms:
+  <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+Verify on submission:
+  if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    error("CSRF attack detected");
+  }
+
+Prevents forged requests from other websites
+
+
+SESSION COOKIE SECURITY
+─────────────────────────
+
+Set secure flags:
+
+Set-Cookie: PHPSESSID=abc123xyz; 
+            HttpOnly;          ← JS cannot access (prevents XSS)
+            Secure;            ← HTTPS only (prevents MITM)
+            SameSite=Strict    ← Prevents CSRF
+
+Ensures:
+  • Session cookie not stolen by JavaScript
+  • Session cookie not sent over HTTP (plaintext)
+  • Session cookie not sent to other domains
+
+
+========================================================================
+SUMMARY
+========================================================================
+
+Authentication:
+  1. User enters username/password
+  2. Backend hashes password using BCrypt
+  3. Compares with stored hash
+  4. If match → Create session
+  5. Session includes user_id, role, username
+  6. Session stored in browser cookie
+  7. Every request verifies session
+
+Passwords:
+  • NEVER stored plaintext
+  • ALWAYS hashed with BCrypt
+  • PASSWORD_VERIFY() for checking
+  • Unique salt for each password
+
+Roles:
+  • ADMIN: Can access all data, manage users
+  • PATIENT: Can only access own data
+  • Role checked on every sensitive operation
+
+Data Exchange:
+  • Admin creates/updates appointments
+  • Database records link to patient_id
+  • Patient logs in, sees only own appointments
+  • Patient can reschedule/cancel own appointments
+  • Admin sees all changes
+
+Security:
+  • SQL Injection Prevention: Prepared statements
+  • Password Security: BCrypt hashing
+  • Access Control: Role checking
+  • CSRF Protection: Tokens
+  • Session Security: HttpOnly, Secure, SameSite flags
+  • Timing Attack Prevention: Constant-time comparison
+
+Every action is logged, every access is validated, every user 
+is isolated to their appropriate data. The system is designed 
+to be secure, private, and trustworthy.

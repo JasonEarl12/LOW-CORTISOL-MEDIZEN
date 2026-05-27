@@ -1,0 +1,31 @@
+.users-module {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.users-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.users-module select {
+  min-width: 150px;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+.btn-save {
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  background: #007b83;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
