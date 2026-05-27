@@ -1,0 +1,1 @@
+.users-module{display:flex;flex-direction:column;gap:.75rem}.users-toolbar{display:flex;justify-content:flex-end}.users-module select{min-width:150px;padding:.35rem .5rem;border-radius:8px;border:1px solid #d1d5db}.btn-save{border:none;border-radius:8px;padding:.4rem .75rem;background:#007b83;color:#fff;cursor:pointer}.btn-save:disabled{opacity:.6;cursor:not-allowed}
